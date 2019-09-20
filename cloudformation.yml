@@ -1,0 +1,413 @@
+AWSTemplateFormatVersion: 2010-09-09 
+Description: >
+  This CloudFormation template contains the AWS Resources to deploy a Jekyll static
+  website to S3 + CloudFront with your own custom Route53 domain from a Jekyll repository 
+  hosted on GitHub.  This template assumes that you've already registered your domain
+  via Route53 and have an AWS account that you can use, and it assumes you have a 
+  Jekyll project hosted on GitHub.
+Parameters:
+  ProjectName:
+    Type: String
+    Description: >
+      The Project name is used to create a Project tag for all Resources
+      that can take tags.  It's also used to help name Resources to identify
+      them as being part of this project.  Because it will be used to name things,
+      it does have certain character restrictions the stem from character restrictions
+      for the names of certain Resources.
+    AllowedPattern: ^[^\.]*$
+  GitHubOwner:
+    Type: String
+    Description: GitHub username
+  GitHubRepositoryName:
+    Type: String
+    Description: >
+      GitHub repository name that hosts the Jekyll project.
+  GitHubBranchName:
+    Type: String
+    Description: >
+      GitHub branch name to use.  Default is set to master.
+      There's no option to set up a more complex dev/test/uat/prod
+      deployment pipeline against different Git branches in this template.
+    Default: master
+  GitHubSecret:
+    Type: String
+    Description: >
+      Secret you want to use for the webhook AWS CloudFormation creates.
+      You can just make one up here and keep it for your records.
+    NoEcho: true
+  GitHubOAuthToken:
+    Type: String
+    Description: GitHub personal access key.  Create one in GitHub or use and existing one.
+    NoEcho: true
+  WebsiteURL:
+    Type: String
+    Description: >
+      Website URL, e.g.  mywebsite.io .  Also used to name the S3 buckets.
+  CloudFrontPriceClass:
+    Type: String
+    Description: CloudFront distribution price class. 
+    Default: PriceClass_All
+    AllowedValues:
+      - PriceClass_100
+      - PriceClass_200
+      - PriceClass_All
+  Route53HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+    Description: >
+      Route 53 Hosted Zone ID value.  This template assumes you
+      have already purchased a domain via Route 53 which will have created 
+      a Route 53 Hosted Zone already.  
+  AcmCertificateArn:
+    Type: String
+    Description: >
+      Amazon Certificate Manager (ACM) Certificate ARN value.
+      This certificate will have been created for you when you used
+      Route 53 to register your domain so you just need to get the ARN
+      value of the certificate and enter it here.
+Resources: 
+  CodePipelineS3Bucket: 
+    Type: AWS::S3::Bucket 
+    Description: >
+      This S3 bucket is dedicated to storing the build artifacts for CodePipeline.
+    Properties: 
+      BucketName: !Join ['-', [!Ref WebsiteURL, 'codepipeline']]
+      Tags: 
+        - Key: Project 
+          Value: !Ref ProjectName 
+  WebsiteS3Bucket: 
+    Type: AWS::S3::Bucket 
+    Description: >
+      This S3 bucket is dedicated to storing the static website files.
+      Note that it is not public because we are using CloudFront OAI to
+      ensure that users only access our website via CloudFront and not directly
+      from our S3 bucket.
+    Properties: 
+      BucketName: !Ref WebsiteURL
+      Tags: 
+        - Key: Project
+          Value: !Ref ProjectName 
+  WebsiteS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Description: >
+      This S3 bucket policy allows access only from our CloudFront OAI to make sure
+      that users only access our website via CloudFront and not directly from S3.
+    Properties:
+      Bucket: !Ref WebsiteS3Bucket
+      PolicyDocument:
+        Statement:
+        - Sid: OAIAccess
+          Effect: Allow
+          Principal:
+            CanonicalUser: !GetAtt CloudFrontOriginAccessIdentity.S3CanonicalUserId
+          Action: s3:GetObject
+          Resource: !Join ['', ['arn:aws:s3:::', !Ref WebsiteS3Bucket, '/*']]
+  WebsiteLogsS3Bucket: 
+    Type: AWS::S3::Bucket 
+    Description: >
+      This S3 bucket is dedicated to storing the logs for the static website.
+    Properties: 
+      BucketName: !Join ['-', [!Ref WebsiteURL, 'logs']]
+      Tags: 
+        - Key: Project
+          Value: !Ref ProjectName
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Description: >
+      CloudFront Distribution is used to front the S3 static website
+      to provide lower latency access via edge locations and to provide https.
+    DependsOn:
+    - WebsiteS3Bucket
+    Properties:
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+      DistributionConfig:
+        Origins:
+        - DomainName: !Join ['.', [!Ref WebsiteURL, 's3.amazonaws.com']]
+          Id: S3Origin
+          S3OriginConfig:
+            OriginAccessIdentity: !Join ['', ['origin-access-identity/cloudfront/', !Ref CloudFrontOriginAccessIdentity]]
+        Enabled: true
+        HttpVersion: http2
+        DefaultRootObject: index.html
+        Logging:
+          IncludeCookies: false
+          Bucket: !GetAtt WebsiteLogsS3Bucket.DomainName
+        Aliases:
+        - !Ref WebsiteURL
+        DefaultCacheBehavior:
+          AllowedMethods:
+          - GET
+          - HEAD
+          TargetOriginId: S3Origin
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          ViewerProtocolPolicy: redirect-to-https
+          LambdaFunctionAssociations:
+            - EventType: origin-request
+              LambdaFunctionARN: !Ref LambdaPathFixerVersion
+        PriceClass: !Ref CloudFrontPriceClass
+        ViewerCertificate:
+          AcmCertificateArn: !Ref AcmCertificateArn
+          SslSupportMethod: sni-only
+  CloudFrontOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Description: >
+      Creating an Origin Access Identity allows us to restrict access directly to S3 and only allow
+      website traffic to go to CloudFront.
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: OAI intended to limit access to our website S3 bucket and only allow website traffic to CloudFront.
+  Route53RecordSetGroup:
+    Type: AWS::Route53::RecordSetGroup
+    Description: >
+      This Route 53 Record Set Group configures DNS for your website.
+    Properties:
+      HostedZoneName: !Join ['', [!Ref WebsiteURL, .]]
+      RecordSets:
+      - Name: !Ref WebsiteURL
+        Type: A
+        AliasTarget:
+          HostedZoneId: Z2FDTNDATAQYW2 # yes, this is the exact value it has to be; it should not be a variable
+          DNSName: !GetAtt CloudFrontDistribution.DomainName
+  CodePipeline: 
+    Type: AWS::CodePipeline::Pipeline
+    Description: >
+      This AWS CodePipeline builds and deploys the Jekyll website by
+      syncing the built contents to the S3 website bucket.
+    Properties: 
+      Name: !Ref ProjectName
+      ArtifactStore: 
+        Location: !Ref CodePipelineS3Bucket 
+        Type: S3 
+      RoleArn: !GetAtt CodePipelineRole.Arn 
+      Stages: 
+        - Name: Source 
+          Actions: 
+            - Name: SourceAction
+              ActionTypeId: 
+                Category: Source 
+                Owner: ThirdParty 
+                Provider: GitHub 
+                Version: 1 
+              Configuration: 
+                Owner: !Ref GitHubOwner
+                Branch: !Ref GitHubBranchName
+                Repo: !Ref GitHubRepositoryName
+                OAuthToken: !Ref GitHubOAuthToken
+                PollForSourceChanges: false
+              OutputArtifacts: 
+                - Name: SourceOutput 
+              RunOrder: 1 
+        - Name: Build 
+          Actions: 
+            - Name: BuildAction 
+              ActionTypeId: 
+                Category: Build 
+                Owner: AWS 
+                Provider: CodeBuild 
+                Version: 1
+              InputArtifacts: 
+                - Name: SourceOutput 
+              Configuration: 
+                ProjectName: !Ref CodeBuildProject
+              RunOrder: 1
+  CodePipelineWebhook:
+    Type: AWS::CodePipeline::Webhook
+    Properties:
+      Name: !Ref ProjectName
+      Authentication: GITHUB_HMAC
+      AuthenticationConfiguration:
+        SecretToken: !Ref GitHubSecret
+      Filters:
+        - JsonPath: $.ref
+          MatchEquals: 'refs/heads/{Branch}'
+      TargetPipeline: !Ref CodePipeline
+      TargetAction: SourceAction
+      TargetPipelineVersion: !GetAtt CodePipeline.Version
+      RegisterWithThirdParty: true
+  CodePipelineRole: 
+    Type: AWS::IAM::Role 
+    Description: >
+      This IAM Role allows CodePipeline to operate on AWS resources
+    Properties: 
+      RoleName: !Join ['-', [!Ref ProjectName, 'CodePipeline']]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17 
+        Statement: 
+        - Action: 'sts:AssumeRole'
+          Effect: Allow 
+          Principal: 
+            Service: 
+              - codepipeline.amazonaws.com
+      Path: / 
+      Policies: 
+        - PolicyName: CodePipeline 
+          PolicyDocument: 
+            Version: 2012-10-17
+            Statement: 
+              - Action: 
+                - 's3:*'
+                - 'sns:*'
+                - 'cloudwatch:*'
+                - 'iam:PassRole' 
+                - 'codebuild:BatchGetBuilds'
+                - 'codebuild:StartBuild'
+                Effect: Allow 
+                Resource: '*' 
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Description: >
+      CodeBuild Project that builds the Jekyll static site
+      and syncs the contents to the S3 website bucket.
+    Properties:
+      Name: !Ref ProjectName
+      Description: Builds a Jekyll static website and syncs the content to S3.
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+      ServiceRole: !Ref CodeBuildRole
+      Artifacts:
+        Type: CODEPIPELINE
+      TimeoutInMinutes: 10
+      Environment:
+        Type: LINUX_CONTAINER 
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:2.0
+        EnvironmentVariables:
+          - Name: WEBSITE_S3_BUCKET
+            Value: !Join ['', ['s3://', !Ref WebsiteS3Bucket]]
+          - Name: CLOUDFRONT_DISTRIBUTION_ID
+            Value: !Ref CloudFrontDistribution
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                ruby: 2.6
+              commands:
+                - gem install bundler jekyll
+                # if your Jekyll project uses CoffeeScipt you'll need to install NodeJS here
+            build:
+              commands:
+                - bundle install
+                - bundle exec jekyll build
+                - aws s3 sync --delete _site/ $WEBSITE_S3_BUCKET
+                - aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_DISTRIBUTION_ID --paths '/*'
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Description: IAM Role to allow CodeBuild to sync website to S3
+    Properties:
+      RoleName: !Join ['-', [!Ref ProjectName, 'CodeBuild']]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          Effect: Allow
+          Principal:
+            Service: codebuild.amazonaws.com
+          Action: sts:AssumeRole
+      Path: / 
+      Policies: 
+        - PolicyName: CodeBuild 
+          PolicyDocument: 
+            Version: 2012-10-17
+            Statement: 
+              - Action: 
+                - 's3:*'
+                - 'logs:CreateLogStream'
+                - 'logs:CreateLogGroup'
+                - 'logs:PutLogEvents'
+                - 'ecr:BatchCheckLayerAvailability'
+                - 'ecr:GetDownloadUrlForLayer'
+                - 'ecr:BatchGetImage'
+                - 'ecr:GetAuthorizationToken'
+                - 'cloudfront:CreateInvalidation'
+                Effect: Allow 
+                Resource: '*' 
+  LambdaPathFixerVersion:
+    Type: AWS::Lambda::Version
+    Description: >
+      CloudFront Lambda@Edge requires an exact Lambda version ARN and cannot accept a simple
+      reference to the $LATEST version of the Lambda function ಠ_ಠ.  For this reason we must create
+      a Lambda Version Resource and reference that instead.  Note that this will create a version
+      when you first create a CloudFormation stack and the version Arn will not be updated in
+      CloudFront if you update the Lambda code.  Because this code is not expected to change this
+      should not be an issue but it's worth noting.
+    Properties: 
+      FunctionName: !Ref LambdaPathFixer
+  LambdaPathFixerRole:
+    Type: AWS::IAM::Role
+    Description: This Role allows the PathFixer Lambda function to interact with the required AWS Resources.
+    Properties:
+      RoleName: !Join ['-', [!Ref ProjectName, 'LambdaFixer']]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          Effect: Allow
+          Principal:
+            Service: 
+              - lambda.amazonaws.com
+              - edgelambda.amazonaws.com
+          Action: sts:AssumeRole
+      Path: / 
+      Policies: 
+        - PolicyName: Lambda 
+          PolicyDocument: 
+            Version: 2012-10-17
+            Statement: 
+              - Action: 
+                - 'logs:CreateLogGroup'
+                - 'logs:CreateLogStream'
+                - 'logs:PutLogEvents'
+                Effect: Allow 
+                Resource: 'arn:aws:logs:*:*:*' 
+  LambdaPathFixer:
+    Type: AWS::Lambda::Function
+    Description: >
+      This Lambda@Edge function rewrites incoming requests with paths ending in / with /index.html
+      to work around the fact that using CloudFront with S3's REST API does not give you automatic
+      plain path redirects. For more information, see this blog post
+      https://aws.amazon.com/blogs/compute/implementing-default-directory-indexes-in-amazon-s3-backed-amazon-cloudfront-origins-using-lambdaedge/
+    Properties:
+      FunctionName: !Join ['-', [!Ref ProjectName, 'PathFixer']]
+      Description: Lambda@Edge function that changes paths from / to /index.html
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+      MemorySize: 128
+      Runtime: nodejs8.10
+      Handler: index.handler
+      Timeout: 3
+      Role: !GetAtt LambdaPathFixerRole.Arn
+      Code:
+        ZipFile: |
+          'use strict';
+          exports.handler = (event, context, callback) => {
+              // Extract the request from the CloudFront event that is sent to Lambda@Edge 
+              var request = event.Records[0].cf.request;
+              // Extract the URI from the request
+              var olduri = request.uri;
+              // Match any '/' that occurs at the end of a URI. Replace it with a default index
+              var newuri = olduri.replace(/\/$/, '\/index.html');
+              // Log the URI as received by CloudFront and the new URI to be used to fetch from origin
+              console.log("Old URI: " + olduri);
+              console.log("New URI: " + newuri);
+              // Replace the received URI with the URI that includes the index page
+              request.uri = newuri;
+              // Return to CloudFront
+              return callback(null, request);
+          };
