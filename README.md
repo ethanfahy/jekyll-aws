@@ -6,6 +6,14 @@ CI/CD is also included to automatically deploy when you push your Jekyll changes
 
 Requires a GitHub Jekyll project, a GitHub personal access token, an AWS account, and a Route53-purchased domain.
 
+Associated blog post can be found [here](https://ethanfahy.cloud/2019/09/24/jekyll-aws.html).
+
+## Architecture
+
+![jekyll-aws architecture](architecture-diagram.png)
+
+The diagram above shows a non-exhaustive architecture overview (e.g. S3 log bucket, IAM Roles created in `cloudformation.html` are not shown).
+
 ## Instructions
 
 - You need an AWS account, and you need to be able to log in with sufficient permissions to create all of the AWS Resources contained in `cloudformation.yml`.
