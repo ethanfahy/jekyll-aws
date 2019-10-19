@@ -22,6 +22,7 @@ Parameters:
     Type: String
     Description: >
       GitHub repository name that hosts the Jekyll project.
+      Use "project-name" not "user/project-name"
   GitHubBranchName:
     Type: String
     Description: >
