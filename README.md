@@ -18,8 +18,9 @@ The diagram above shows a non-exhaustive architecture overview (e.g. S3 log buck
 
 - You need an AWS account, and you need to be able to log in with sufficient permissions to create all of the AWS Resources contained in `cloudformation.yml`.
 - You need to register your desired domain using AWS Route53 in advance of using `cloudformation.yml`.
+- You need a public certificate for your domain to be used by AWS CloudFront. Follow the instructions on the [AWS Docs](https://docs.aws.amazon.com/acm/latest/userguide/gs-acm-request-public.html).
 - You need a GitHub account that contains a repository with a Jekyll project.  Note that if your Jekyll project uses CoffeeScript you'll need to edit the `BuildSpec` parameter in the template so that NodeJS gets installed (see some of the blog posts in the Acknowledgements for an example of how this is done).
-- You need to [create a GitHub personal access token](https://help.github.com/en/articles/creating-a-personal-access-token-for-the-command-line) with sufficient permissions for CodePipeline to access your repository.
+- You need to [create a GitHub personal access token](https://help.github.com/en/articles/creating-a-personal-access-token-for-the-command-line) with the `repo` and `admin:repo_hook` options selected for CodePipeline to access your repository ([AWS Docs](https://docs.aws.amazon.com/codepipeline/latest/userguide/GitHub-create-personal-token-CLI.html)).
 - Once you have all the above prerequisites in order, you simply create an AWS CloudFormation stack using the `cloudformation.yml` file in this project and fill in all of the required parameters.  Once the template has been deployed successfully, CodeBuild will build and deploy your website automatically and you should see it hosted at the domain that you specified in your `WebsiteURL` parameter in the CloudFormation stack.  You will see your website changes automatically whenever you push changes to your GitHub Jekyll repository on the specified branch.  
 
 ## Why does this project exist?

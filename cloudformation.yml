@@ -1,9 +1,9 @@
-AWSTemplateFormatVersion: 2010-09-09 
+AWSTemplateFormatVersion: 2010-09-09
 Description: >
   This CloudFormation template contains the AWS Resources to deploy a Jekyll static
-  website to S3 + CloudFront with your own custom Route53 domain from a Jekyll repository 
+  website to S3 + CloudFront with your own custom Route53 domain from a Jekyll repository
   hosted on GitHub.  This template assumes that you've already registered your domain
-  via Route53 and have an AWS account that you can use, and it assumes you have a 
+  via Route53 and have an AWS account that you can use, and it assumes you have a
   Jekyll project hosted on GitHub.
 Parameters:
   ProjectName:
@@ -22,6 +22,7 @@ Parameters:
     Type: String
     Description: >
       GitHub repository name that hosts the Jekyll project.
+      Use "project-name" not "user/project-name"
   GitHubBranchName:
     Type: String
     Description: >
@@ -35,9 +36,9 @@ Parameters:
       Secret you want to use for the webhook AWS CloudFormation creates.
       You can just make one up here and keep it for your records.
     NoEcho: true
-  GitHubOAuthToken:
+  GitHubPersonalAccessToken:
     Type: String
-    Description: GitHub personal access key.  Create one in GitHub or use and existing one.
+    Description: GitHub personal access token.  Create one in GitHub or use and existing one.
     NoEcho: true
   WebsiteURL:
     Type: String
@@ -45,7 +46,7 @@ Parameters:
       Website URL, e.g.  mywebsite.io .  Also used to name the S3 buckets.
   CloudFrontPriceClass:
     Type: String
-    Description: CloudFront distribution price class. 
+    Description: CloudFront distribution price class.
     Default: PriceClass_All
     AllowedValues:
       - PriceClass_100
@@ -55,37 +56,34 @@ Parameters:
     Type: AWS::Route53::HostedZone::Id
     Description: >
       Route 53 Hosted Zone ID value.  This template assumes you
-      have already purchased a domain via Route 53 which will have created 
-      a Route 53 Hosted Zone already.  
+      have already purchased a domain via Route 53 which will have created
+      a Route 53 Hosted Zone already.
   AcmCertificateArn:
     Type: String
     Description: >
       Amazon Certificate Manager (ACM) Certificate ARN value.
-      This certificate will have been created for you when you used
-      Route 53 to register your domain so you just need to get the ARN
-      value of the certificate and enter it here.
-Resources: 
-  CodePipelineS3Bucket: 
-    Type: AWS::S3::Bucket 
+Resources:
+  CodePipelineS3Bucket:
+    Type: AWS::S3::Bucket
     Description: >
       This S3 bucket is dedicated to storing the build artifacts for CodePipeline.
-    Properties: 
+    Properties:
       BucketName: !Join ['-', [!Ref WebsiteURL, 'codepipeline']]
-      Tags: 
-        - Key: Project 
-          Value: !Ref ProjectName 
-  WebsiteS3Bucket: 
-    Type: AWS::S3::Bucket 
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+  WebsiteS3Bucket:
+    Type: AWS::S3::Bucket
     Description: >
       This S3 bucket is dedicated to storing the static website files.
       Note that it is not public because we are using CloudFront OAI to
       ensure that users only access our website via CloudFront and not directly
       from our S3 bucket.
-    Properties: 
+    Properties:
       BucketName: !Ref WebsiteURL
-      Tags: 
+      Tags:
         - Key: Project
-          Value: !Ref ProjectName 
+          Value: !Ref ProjectName
   WebsiteS3BucketPolicy:
     Type: AWS::S3::BucketPolicy
     Description: >
@@ -101,13 +99,13 @@ Resources:
             CanonicalUser: !GetAtt CloudFrontOriginAccessIdentity.S3CanonicalUserId
           Action: s3:GetObject
           Resource: !Join ['', ['arn:aws:s3:::', !Ref WebsiteS3Bucket, '/*']]
-  WebsiteLogsS3Bucket: 
-    Type: AWS::S3::Bucket 
+  WebsiteLogsS3Bucket:
+    Type: AWS::S3::Bucket
     Description: >
       This S3 bucket is dedicated to storing the logs for the static website.
-    Properties: 
+    Properties:
       BucketName: !Join ['-', [!Ref WebsiteURL, 'logs']]
-      Tags: 
+      Tags:
         - Key: Project
           Value: !Ref ProjectName
   CloudFrontDistribution:
@@ -173,46 +171,46 @@ Resources:
         AliasTarget:
           HostedZoneId: Z2FDTNDATAQYW2 # yes, this is the exact value it has to be; it should not be a variable
           DNSName: !GetAtt CloudFrontDistribution.DomainName
-  CodePipeline: 
+  CodePipeline:
     Type: AWS::CodePipeline::Pipeline
     Description: >
       This AWS CodePipeline builds and deploys the Jekyll website by
       syncing the built contents to the S3 website bucket.
-    Properties: 
+    Properties:
       Name: !Ref ProjectName
-      ArtifactStore: 
-        Location: !Ref CodePipelineS3Bucket 
-        Type: S3 
-      RoleArn: !GetAtt CodePipelineRole.Arn 
-      Stages: 
-        - Name: Source 
-          Actions: 
+      ArtifactStore:
+        Location: !Ref CodePipelineS3Bucket
+        Type: S3
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      Stages:
+        - Name: Source
+          Actions:
             - Name: SourceAction
-              ActionTypeId: 
-                Category: Source 
-                Owner: ThirdParty 
-                Provider: GitHub 
-                Version: 1 
-              Configuration: 
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Provider: GitHub
+                Version: 1
+              Configuration:
                 Owner: !Ref GitHubOwner
                 Branch: !Ref GitHubBranchName
                 Repo: !Ref GitHubRepositoryName
-                OAuthToken: !Ref GitHubOAuthToken
+                OAuthToken: !Ref GitHubPersonalAccessToken
                 PollForSourceChanges: false
-              OutputArtifacts: 
-                - Name: SourceOutput 
-              RunOrder: 1 
-        - Name: Build 
-          Actions: 
-            - Name: BuildAction 
-              ActionTypeId: 
-                Category: Build 
-                Owner: AWS 
-                Provider: CodeBuild 
+              OutputArtifacts:
+                - Name: SourceOutput
+              RunOrder: 1
+        - Name: Build
+          Actions:
+            - Name: BuildAction
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
                 Version: 1
-              InputArtifacts: 
-                - Name: SourceOutput 
-              Configuration: 
+              InputArtifacts:
+                - Name: SourceOutput
+              Configuration:
                 ProjectName: !Ref CodeBuildProject
               RunOrder: 1
   CodePipelineWebhook:
@@ -229,38 +227,38 @@ Resources:
       TargetAction: SourceAction
       TargetPipelineVersion: !GetAtt CodePipeline.Version
       RegisterWithThirdParty: true
-  CodePipelineRole: 
-    Type: AWS::IAM::Role 
+  CodePipelineRole:
+    Type: AWS::IAM::Role
     Description: >
       This IAM Role allows CodePipeline to operate on AWS resources
-    Properties: 
+    Properties:
       RoleName: !Join ['-', [!Ref ProjectName, 'CodePipeline']]
       Tags:
         - Key: Project
           Value: !Ref ProjectName
-      AssumeRolePolicyDocument: 
-        Version: 2012-10-17 
-        Statement: 
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
         - Action: 'sts:AssumeRole'
-          Effect: Allow 
-          Principal: 
-            Service: 
+          Effect: Allow
+          Principal:
+            Service:
               - codepipeline.amazonaws.com
-      Path: / 
-      Policies: 
-        - PolicyName: CodePipeline 
-          PolicyDocument: 
+      Path: /
+      Policies:
+        - PolicyName: CodePipeline
+          PolicyDocument:
             Version: 2012-10-17
-            Statement: 
-              - Action: 
+            Statement:
+              - Action:
                 - 's3:*'
                 - 'sns:*'
                 - 'cloudwatch:*'
-                - 'iam:PassRole' 
+                - 'iam:PassRole'
                 - 'codebuild:BatchGetBuilds'
                 - 'codebuild:StartBuild'
-                Effect: Allow 
-                Resource: '*' 
+                Effect: Allow
+                Resource: '*'
   CodeBuildProject:
     Type: AWS::CodeBuild::Project
     Description: >
@@ -277,7 +275,7 @@ Resources:
         Type: CODEPIPELINE
       TimeoutInMinutes: 10
       Environment:
-        Type: LINUX_CONTAINER 
+        Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
         Image: aws/codebuild/standard:2.0
         EnvironmentVariables:
@@ -317,13 +315,13 @@ Resources:
           Principal:
             Service: codebuild.amazonaws.com
           Action: sts:AssumeRole
-      Path: / 
-      Policies: 
-        - PolicyName: CodeBuild 
-          PolicyDocument: 
+      Path: /
+      Policies:
+        - PolicyName: CodeBuild
+          PolicyDocument:
             Version: 2012-10-17
-            Statement: 
-              - Action: 
+            Statement:
+              - Action:
                 - 's3:*'
                 - 'logs:CreateLogStream'
                 - 'logs:CreateLogGroup'
@@ -333,8 +331,8 @@ Resources:
                 - 'ecr:BatchGetImage'
                 - 'ecr:GetAuthorizationToken'
                 - 'cloudfront:CreateInvalidation'
-                Effect: Allow 
-                Resource: '*' 
+                Effect: Allow
+                Resource: '*'
   LambdaPathFixerVersion:
     Type: AWS::Lambda::Version
     Description: >
@@ -344,7 +342,7 @@ Resources:
       when you first create a CloudFormation stack and the version Arn will not be updated in
       CloudFront if you update the Lambda code.  Because this code is not expected to change this
       should not be an issue but it's worth noting.
-    Properties: 
+    Properties:
       FunctionName: !Ref LambdaPathFixer
   LambdaPathFixerRole:
     Type: AWS::IAM::Role
@@ -359,22 +357,22 @@ Resources:
         Statement:
           Effect: Allow
           Principal:
-            Service: 
+            Service:
               - lambda.amazonaws.com
               - edgelambda.amazonaws.com
           Action: sts:AssumeRole
-      Path: / 
-      Policies: 
-        - PolicyName: Lambda 
-          PolicyDocument: 
+      Path: /
+      Policies:
+        - PolicyName: Lambda
+          PolicyDocument:
             Version: 2012-10-17
-            Statement: 
-              - Action: 
+            Statement:
+              - Action:
                 - 'logs:CreateLogGroup'
                 - 'logs:CreateLogStream'
                 - 'logs:PutLogEvents'
-                Effect: Allow 
-                Resource: 'arn:aws:logs:*:*:*' 
+                Effect: Allow
+                Resource: 'arn:aws:logs:*:*:*'
   LambdaPathFixer:
     Type: AWS::Lambda::Function
     Description: >
@@ -397,7 +395,7 @@ Resources:
         ZipFile: |
           'use strict';
           exports.handler = (event, context, callback) => {
-              // Extract the request from the CloudFront event that is sent to Lambda@Edge 
+              // Extract the request from the CloudFront event that is sent to Lambda@Edge
               var request = event.Records[0].cf.request;
               // Extract the URI from the request
               var olduri = request.uri;
