@@ -297,7 +297,8 @@ Resources:
             build:
               commands:
                 - bundle install
-                - bundle exec jekyll build
+                # build for production to enable items like Google Analytics
+                - JEKYLL_ENV=production bundle exec jekyll build
                 - aws s3 sync --delete _site/ $WEBSITE_S3_BUCKET
                 - aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_DISTRIBUTION_ID --paths '/*'
   CodeBuildRole:
