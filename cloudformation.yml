@@ -388,7 +388,7 @@ Resources:
         - Key: Project
           Value: !Ref ProjectName
       MemorySize: 128
-      Runtime: nodejs8.10
+      Runtime: nodejs10.x
       Handler: index.handler
       Timeout: 3
       Role: !GetAtt LambdaPathFixerRole.Arn
