@@ -277,7 +277,7 @@ Resources:
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:2.0
+        Image: aws/codebuild/standard:4.0
         EnvironmentVariables:
           - Name: WEBSITE_S3_BUCKET
             Value: !Join ['', ['s3://', !Ref WebsiteS3Bucket]]
@@ -290,7 +290,7 @@ Resources:
           phases:
             install:
               runtime-versions:
-                ruby: 2.6
+                ruby: 2.7
               commands:
                 - gem install bundler jekyll
                 # if your Jekyll project uses CoffeeScipt you'll need to install NodeJS here
